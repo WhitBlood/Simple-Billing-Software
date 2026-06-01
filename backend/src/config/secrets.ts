@@ -8,8 +8,8 @@ export function getAppConfig(): AppConfig {
     env: (process.env.ENV as 'local' | 'aws') || 'local',
     port: parseInt(process.env.PORT || '4000', 10),
     frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
-    awsRegion: process.env.AWS_REGION || 'ap-south-1',
-    awsSecretName: process.env.AWS_SECRET_NAME || 'billflow/production/secrets',
+    awsRegion: process.env.AWS_REGION || 'us-east-1',
+    awsSecretName: process.env.AWS_SECRET_NAME || 'billing-app-backend-secret',
   };
 }
 
