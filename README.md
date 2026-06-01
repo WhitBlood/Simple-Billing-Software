@@ -140,7 +140,7 @@ You should see:
 }
 ```
 
-4. Secret name: **`billflow/production/secrets`**
+4. Secret name: **`=billing-app-backend-secret`**
 5. Click **Store**
 
 ### Step 2: IAM Permissions
@@ -154,7 +154,7 @@ Your EC2/ECS/Lambda role needs this policy:
     {
       "Effect": "Allow",
       "Action": "secretsmanager:GetSecretValue",
-      "Resource": "arn:aws:secretsmanager:<region>:<account-id>:secret:billflow/production/secrets-*"
+      "Resource": "arn:aws:secretsmanager:<region>:<account-id>:secret:=billing-app-backend-secret-*"
     }
   ]
 }
