@@ -1,5 +1,9 @@
 import dotenv from 'dotenv';
-dotenv.config();
+// Only load .env file in local development (not in Kubernetes/containers)
+// Kubernetes always sets KUBERNETES_SERVICE_HOST environment variable
+if (!process.env.KUBERNETES_SERVICE_HOST) {
+  dotenv.config();
+}
 
 import express from 'express';
 import cors from 'cors';
@@ -74,3 +78,4 @@ bootstrap().catch((err) => {
   console.error('💥 Fatal startup error:', err);
   process.exit(1);
 });
+

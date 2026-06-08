@@ -15,7 +15,7 @@ export async function initDatabase(secrets: AppSecrets): Promise<boolean> {
       max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
-      ssl: secrets.DB_HOST !== 'localhost' ? { rejectUnauthorized: false } : undefined,
+      ssl: secrets.DB_HOST !== 'localhost' && secrets.DB_HOST !== 'postgres' ? { rejectUnauthorized: false } : undefined,
     });
 
     // Test connection
@@ -46,3 +46,4 @@ export async function query(text: string, params?: unknown[]) {
   if (!pool) throw new Error('Database not available');
   return pool.query(text, params);
 }
+
