@@ -4,6 +4,17 @@ import { AppSecrets } from './types';
 let pool: Pool | null = null;
 let dbAvailable = false;
 
+// SSL for the DB connection is controlled by the DB_SSL env var:
+//   DB_SSL=false → no SSL   (in-cluster Postgres pod / local Postgres)
+//   DB_SSL=true  → SSL      (AWS RDS)
+//   not set      → SSL for any host except "localhost" (previous behaviour)
+export function getSslConfig(host: string): { rejectUnauthorized: boolean } | undefined {
+  const flag = (process.env.DB_SSL || '').trim().toLowerCase();
+  if (flag === 'false' || flag === '0') return undefined;
+  if (flag === 'true' || flag === '1') return { rejectUnauthorized: false };
+  return host !== 'localhost' ? { rejectUnauthorized: false } : undefined;
+}
+
 export async function initDatabase(secrets: AppSecrets): Promise<boolean> {
   try {
     pool = new Pool({
@@ -15,7 +26,7 @@ export async function initDatabase(secrets: AppSecrets): Promise<boolean> {
       max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
-      ssl: secrets.DB_HOST !== 'localhost' ? { rejectUnauthorized: false } : undefined,
+      ssl: getSslConfig(secrets.DB_HOST),
     });
 
     // Test connection

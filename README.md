@@ -1,318 +1,215 @@
-# BillFlow Backend
+# BillFlow – Smart Billing Management
 
-Production-grade **Node.js + TypeScript + Express** backend for the BillFlow Billing Management System.
+A full-stack billing app for small stores: register a store, create bills with items, tax and discount, finalize them, and view history.
 
----
+**Live domain:** https://whiteblood.online
 
-## 🏗️ Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Runtime | Node.js 18+ |
-| Language | TypeScript |
-| Framework | Express.js |
-| Database | PostgreSQL 15+ |
-| Auth | JWT (bcrypt hashing) |
-| Secrets | AWS Secrets Manager / `.env` |
-| Security | Helmet, CORS, HPP, Rate Limiting, Input Validation |
+| Layer | Stack |
+|---|---|
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS, React Router (served by a small Express server) |
+| Backend | Node.js 18, Express, TypeScript, JWT, bcrypt |
+| Database | PostgreSQL 15+ running inside the Kubernetes cluster (AWS RDS is an optional alternative, see `rds-option/`) |
+| Secrets | Kubernetes Secret / environment variables |
+| Infra | Docker, Kubernetes, Ingress |
 
 ---
 
-## 📁 Project Structure
+## Features
+
+- Register and sign in (JWT, bcrypt password hashing)
+- Create bills with multiple items, tax %, discount % and payment method (cash, card, UPI, online)
+- Save a bill as a draft or finalize it (finalized bills are locked)
+- Bill history, bill details with QR code, dashboard, profile and settings
+- Security: Helmet, CORS, HPP, rate limiting (general, login, bill creation), input validation and sanitization
+- Health endpoint at `/api/health` (reports database status)
+
+---
+
+## Project Structure
 
 ```
-backend/
-├── src/
-│   ├── index.ts                 # Server entry point
-│   ├── config/
-│   │   ├── database.ts          # PostgreSQL connection pool
-│   │   ├── secrets.ts           # AWS Secrets Manager / .env loader
-│   │   └── types.ts             # Config type definitions
-│   ├── middleware/
-│   │   ├── auth.ts              # JWT authentication + role guard
-│   │   ├── errorHandler.ts      # Global error handler
-│   │   ├── rateLimiter.ts       # DDoS / brute-force protection
-│   │   └── requireDb.ts         # DB availability gate
-│   ├── routes/
-│   │   ├── auth.ts              # Register, Login, Profile
-│   │   ├── bills.ts             # CRUD + Finalize bills
-│   │   └── health.ts            # Health check endpoint
-│   └── scripts/
-│       └── initDb.ts            # Database schema initializer
-├── .env.example
-├── .gitignore
-├── package.json
-└── tsconfig.json
+.
+├── backend/            # Express + TypeScript API
+│   ├── src/
+│   │   ├── index.ts          # Entry point (CORS, security, routes)
+│   │   ├── config/           # DB pool, secrets loader (AWS / .env)
+│   │   ├── middleware/       # auth, rate limiter, error handler, requireDb
+│   │   ├── routes/           # auth, bills, health
+│   │   └── scripts/initDb.ts # Creates DB tables
+│   └── Dockerfile
+├── frontend/           # React app
+│   ├── server.js             # Serves the build and /config.js (runtime config)
+│   ├── src/                  # pages, components, contexts, services/api.ts
+│   └── Dockerfile
+├── k8s/                # Kubernetes manifests
+├── rds-option/         # Optional: AWS RDS + Secrets Manager setup (not used in the demo)
+└── docker-compose.yml
 ```
 
 ---
 
-## 🗄️ Database Setup (PostgreSQL on AWS RDS)
+## How It Fits Together (whiteblood.online)
 
-### Step 1: Create the RDS Instance
+The Ingress routes both apps on **one domain**, so no CORS is needed in production. The database is only reachable inside the cluster.
 
-1. Go to **AWS Console → RDS → Create Database**
-2. Choose **PostgreSQL** engine (version 15 or 16)
-3. Settings:
+```
+https://whiteblood.online/        → frontend-service (port 80 → container 3000)
+https://whiteblood.online/api/*   → backend-service  (port 4000)
+```
 
-| Setting | Value |
-|---------|-------|
-| **DB Instance Identifier** | `billflow-db` |
-| **Master Username** | `billflow_admin` |
-| **Master Password** | *(choose a strong password)* |
-| **DB Instance Class** | `db.t3.micro` (free tier) or `db.t3.small` |
-| **Storage** | 20 GB gp3 |
-| **Public Access** | Yes *(for initial setup, disable later)* |
-| **VPC Security Group** | Allow inbound TCP port **5432** from your IP |
+- The frontend reads `BACKEND_URL` **at runtime** from `/config.js`. Leave it **empty** so the app calls the relative path `/api`.
+- The backend uses `FRONTEND_URL` for CORS. It accepts a comma-separated list.
 
-4. Under **Additional Configuration**:
-   - **⚠️ IMPORTANT — Initial Database Name: `billflow_db`**
-   - This is the field most people miss. You **MUST** set this, otherwise RDS creates the instance without a database and your app will fail with "database does not exist".
+---
 
-5. Click **Create Database** and wait for status = "Available"
+## Environment Variables
 
-### Step 2: Note Your Connection Details
+### Backend
 
-After creation, find these in the RDS console:
+| Variable | Example | Notes |
+|---|---|---|
+| `ENV` | `local` | Reads DB and JWT settings from environment variables. Use this for the in-cluster database |
+| `PORT` | `4000` | |
+| `FRONTEND_URL` | `https://whiteblood.online,https://www.whiteblood.online` | Comma-separated allowed origins |
+| `DB_HOST` | `postgres` | Name of the Postgres Service in the cluster |
+| `DB_PORT` | `5432` | |
+| `DB_NAME` | `billflow_db` | |
+| `DB_USER` | `billflow_admin` | |
+| `DB_PASSWORD` | *(from a K8s Secret)* | |
+| `DB_SSL` | `false` | In-cluster Postgres has no SSL. Use `true` for RDS |
+| `JWT_SECRET` | *(from a K8s Secret)* | **Must be set** to a long random value. The built-in default is not safe |
+| `JWT_EXPIRES_IN` | `7d` | |
 
-| Value | Where to Find |
-|-------|--------------|
-| **DB_HOST** | RDS → Connectivity & Security → **Endpoint** (e.g. `billflow-db.xxxx.ap-south-1.rds.amazonaws.com`) |
-| **DB_PORT** | `5432` |
-| **DB_NAME** | `billflow_db` (the one you set in step 4) |
-| **DB_USER** | `billflow_admin` |
-| **DB_PASSWORD** | The master password you chose |
+For AWS RDS with Secrets Manager (`ENV=aws`), see [`rds-option/README.md`](rds-option/README.md).
 
-### Step 3: Initialize the Schema
+### Frontend
+
+| Variable | Example | Notes |
+|---|---|---|
+| `BACKEND_URL` | *(empty)* | Runtime setting. Empty means use `/api` on the same domain |
+| `PORT` | `3000` | |
+| `VITE_API_URL` | `http://localhost:4000/api` | Local `npm run dev` only |
+
+---
+
+## Run Locally
+
+**Prerequisites:** Node.js 18+, PostgreSQL 15+
 
 ```bash
-# From the backend/ folder
-cp .env.example .env
-# Edit .env with your RDS connection details
-npm run db:init
-```
-
-This creates the `users`, `bills`, and `bill_items` tables with all indexes.
-
-### Step 4: Verify
-
-Connect using `psql` or any SQL client:
-
-```bash
-psql -h <YOUR_RDS_ENDPOINT> -U billflow_admin -d billflow_db
-```
-
-Then run:
-
-```sql
-\dt
-```
-
-You should see:
-
-```
- Schema |    Name    | Type  |     Owner
---------+------------+-------+----------------
- public | bill_items | table | billflow_admin
- public | bills      | table | billflow_admin
- public | users      | table | billflow_admin
-```
-
----
-
-## 🔐 AWS Secrets Manager Setup
-
-### Step 1: Create the Secret
-
-1. Go to **AWS Console → Secrets Manager → Store a new secret**
-2. Secret type: **Other type of secret**
-3. Add these key/value pairs:
-
-```json
-{
-  "DB_HOST": "billflow-db.xxxx.ap-south-1.rds.amazonaws.com",
-  "DB_PORT": "5432",
-  "DB_NAME": "billflow_db",
-  "DB_USER": "billflow_admin",
-  "DB_PASSWORD": "YourStrongPassword",
-  "JWT_SECRET": "a-very-long-random-string-min-64-chars",
-  "JWT_EXPIRES_IN": "7d"
-}
-```
-
-4. Secret name: **`=billing-app-backend-secret`**
-5. Click **Store**
-
-### Step 2: IAM Permissions
-
-Your EC2/ECS/Lambda role needs this policy:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": "secretsmanager:GetSecretValue",
-      "Resource": "arn:aws:secretsmanager:<region>:<account-id>:secret:=billing-app-backend-secret-*"
-    }
-  ]
-}
-```
-
-### How It Works
-
-| `ENV` value | Behavior |
-|-------------|----------|
-| `local` | Reads secrets from `.env` file |
-| `aws` | Fetches secrets from AWS Secrets Manager |
-
-Set `ENV=aws` in your production environment (EC2 user data, ECS task definition, etc.)
-
----
-
-## 🚀 Running Locally
-
-```bash
+# 1. Backend
 cd backend
+cp .env.example .env        # edit DB credentials and JWT_SECRET
 npm install
+npm run db:init             # creates the tables (run once)
+npm run dev                 # http://localhost:4000
 
-# Set up .env
-cp .env.example .env
-# Edit .env with your local or RDS database credentials
-
-# Initialize database (only once)
-npm run db:init
-
-# Start development server
-npm run dev
+# 2. Frontend (new terminal)
+cd frontend
+npm install
+npm run dev                 # http://localhost:5173
 ```
 
-The server will start at `http://localhost:4000`.
+Set `FRONTEND_URL=http://localhost:5173` in `backend/.env` and `VITE_API_URL=http://localhost:4000/api` in `frontend/.env`.
 
-> **Note:** The server starts even WITHOUT a database connection. Health endpoint and non-DB routes will work. DB-dependent routes return `503 Service Unavailable`.
-
-### Health Check
-
-```bash
-curl http://localhost:4000/api/health
-```
-
-Response:
-```json
-{
-  "status": "ok",
-  "service": "BillFlow API",
-  "version": "1.0.0",
-  "timestamp": "2026-05-30T10:00:00.000Z",
-  "uptime": "42s",
-  "database": "connected",
-  "environment": "local",
-  "dbLatencyMs": 3
-}
-```
+Check the API: `curl http://localhost:4000/api/health`
 
 ---
 
-## 🛡️ Security Features
+## Deploy to whiteblood.online
 
-| Protection | Implementation |
-|-----------|---------------|
-| **DDoS** | Rate limiting (200 req/15min general, 15 req/15min auth) |
-| **Brute Force** | Auth endpoints rate-limited separately |
-| **XSS** | Helmet security headers + input escaping |
-| **SQL Injection** | Parameterized queries (never string concatenation) |
-| **CSRF** | CORS restricted to frontend origin |
-| **Parameter Pollution** | HPP middleware |
-| **Data Exposure** | No secrets in code, AWS Secrets Manager |
-| **Payload Size** | Request body limited to 10KB |
-| **Password Storage** | bcrypt with 12 salt rounds |
+1. **Database:** run PostgreSQL in the cluster (StatefulSet or Deployment with a PersistentVolumeClaim, plus a **ClusterIP** Service named `postgres`). Use database name `billflow_db`. Keep this Service ClusterIP so the database is never exposed outside the cluster.
+2. **Secrets:** put `DB_PASSWORD` and `JWT_SECRET` in a Kubernetes Secret and pass them to the backend (and the Postgres pod) as environment variables.
+3. **Create the tables once**, after the Postgres pod is running:
+   ```bash
+   kubectl exec deploy/backend -- node dist/scripts/initDb.js
+   ```
+4. **Build and push images:**
+   ```bash
+   docker build -t <registry>/billflow-backend:latest  ./backend
+   docker build -t <registry>/billflow-frontend:latest ./frontend
+   docker push <registry>/billflow-backend:latest
+   docker push <registry>/billflow-frontend:latest
+   ```
+5. **Manifest values:**
+   - Backend: `ENV=local`, `DB_HOST=postgres`, `DB_SSL=false`, `FRONTEND_URL=https://whiteblood.online,https://www.whiteblood.online`, plus the DB and JWT values from the table above
+   - Frontend: `BACKEND_URL` empty
+6. **Expose the apps** (your choice of Service type / Ingress):
+   - Host `whiteblood.online` (plus `www.whiteblood.online`); `/api` → backend:4000, `/` → frontend
+   - TLS certificate that covers `whiteblood.online` and `www.whiteblood.online`
+   - Health check paths: backend `/api/health`, frontend `/`
+7. **DNS:** point `whiteblood.online` and `www` to the public IP or hostname of your ingress / load balancer / node.
+8. **Restart** pods after any config change: `kubectl rollout restart deployment <name>`
 
----
-
-## 📡 API Endpoints
-
-### Public
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/health` | Health check |
-| POST | `/api/auth/register` | Create account |
-| POST | `/api/auth/login` | Sign in (returns JWT) |
-
-### Protected (requires `Authorization: Bearer <token>`)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/auth/me` | Get profile |
-| PUT | `/api/auth/me` | Update profile |
-| GET | `/api/bills` | List all bills |
-| POST | `/api/bills` | Create bill |
-| GET | `/api/bills/:id` | Get single bill |
-| PATCH | `/api/bills/:id/finalize` | Finalize a bill |
+> **Data persistence:** give the Postgres pod a PersistentVolumeClaim. Without one, all data is lost whenever the pod restarts.
 
 ---
 
-## 🏭 Production Build
+## API Reference
 
-```bash
-cd backend
-npm run build
-ENV=aws node dist/index.js
-```
+All routes are under `/api`. Protected routes need `Authorization: Bearer <token>`.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/health` | No | Service and database status |
+| POST | `/auth/register` | No | Create an account |
+| POST | `/auth/login` | No | Returns JWT and user |
+| GET | `/auth/me` | Yes | Current profile |
+| PUT | `/auth/me` | Yes | Update profile |
+| POST | `/bills` | Yes | Create a bill (draft or finalized) |
+| GET | `/bills` | Yes | List your bills |
+| GET | `/bills/:id` | Yes | Get one bill |
+| PATCH | `/bills/:id/finalize` | Yes | Finalize a draft bill |
+
+**Validation rules:** password at least 8 characters (the UI also requires an uppercase letter and a number); phone is 10 digits starting with 6–9; tax and discount are 0–100.
 
 ---
 
-## 📋 Complete SQL Schema (manual reference)
+## Demo Script (5 minutes)
 
-If you prefer to run SQL manually instead of `npm run db:init`:
+1. Open `https://whiteblood.online/api/health` and show `"database": "connected"`.
+2. Open `https://whiteblood.online`, click **Register**, and create an account (for example, phone `9876543210`, password `Demo@1234`).
+3. Sign in and show the dashboard.
+4. **Create Bill:** add a customer and 2–3 items, set tax and discount, and click **Finalize**.
+5. Open the bill details and show the QR code.
+6. Create another bill and **Save Draft**, then finalize it from the details page.
+7. Show **Bill History**, **Profile** and **Settings**.
+8. Log out and back in to show that the data is stored in the database.
 
-```sql
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+---
 
-CREATE TABLE IF NOT EXISTS users (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name            VARCHAR(255) NOT NULL,
-    email           VARCHAR(255) UNIQUE NOT NULL,
-    password        VARCHAR(255) NOT NULL,
-    store_name      VARCHAR(255) NOT NULL,
-    store_address   TEXT DEFAULT '',
-    phone           VARCHAR(15) NOT NULL,
-    role            VARCHAR(20) DEFAULT 'admin',
-    created_at      TIMESTAMPTZ DEFAULT NOW()
-);
+## Pre-Demo Checklist
 
-CREATE TABLE IF NOT EXISTS bills (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    bill_number     VARCHAR(50) UNIQUE NOT NULL,
-    date            DATE NOT NULL,
-    time            VARCHAR(20) NOT NULL,
-    store_name      VARCHAR(255) NOT NULL,
-    store_address   TEXT DEFAULT '',
-    customer_name   VARCHAR(255) NOT NULL,
-    customer_phone  VARCHAR(15) DEFAULT '',
-    subtotal        DECIMAL(12,2) NOT NULL DEFAULT 0,
-    tax_rate        DECIMAL(5,2) NOT NULL DEFAULT 0,
-    tax_amount      DECIMAL(12,2) NOT NULL DEFAULT 0,
-    discount_rate   DECIMAL(5,2) NOT NULL DEFAULT 0,
-    discount_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
-    grand_total     DECIMAL(12,2) NOT NULL DEFAULT 0,
-    payment_method  VARCHAR(20) NOT NULL DEFAULT 'cash',
-    finalized       BOOLEAN DEFAULT FALSE,
-    created_by      UUID REFERENCES users(id) ON DELETE CASCADE,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
-);
+- [ ] `https://whiteblood.online/api/health` returns `"database": "connected"`
+- [ ] The Postgres pod is `Running` and has a PersistentVolumeClaim
+- [ ] The tables were created (`kubectl exec deploy/backend -- node dist/scripts/initDb.js`)
+- [ ] Register, login and create-bill work on the live domain
+- [ ] Bills created appear after logout and login (data comes from the database)
+- [ ] Bills survive a Postgres pod restart (`kubectl delete pod <postgres-pod>`, then check again)
+- [ ] Backend and frontend images were rebuilt after the latest code changes
+- [ ] The TLS certificate is valid and HTTPS shows no warnings
+- [ ] Test both `whiteblood.online` and `www.whiteblood.online`
+- [ ] `JWT_SECRET` is a long random value (not the default)
 
-CREATE TABLE IF NOT EXISTS bill_items (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    bill_id         UUID REFERENCES bills(id) ON DELETE CASCADE,
-    name            VARCHAR(255) NOT NULL,
-    quantity        INTEGER NOT NULL DEFAULT 1,
-    unit_price      DECIMAL(12,2) NOT NULL DEFAULT 0,
-    total_price     DECIMAL(12,2) NOT NULL DEFAULT 0
-);
+---
 
-CREATE INDEX IF NOT EXISTS idx_bills_created_by ON bills(created_by);
-CREATE INDEX IF NOT EXISTS idx_bills_finalized ON bills(finalized);
-CREATE INDEX IF NOT EXISTS idx_bills_date ON bills(date);
-CREATE INDEX IF NOT EXISTS idx_bill_items_bill_id ON bill_items(bill_id);
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-```
+## Troubleshooting
+
+| Symptom | Likely cause and fix |
+|---|---|
+| Login or register fails with a network or CORS error | `FRONTEND_URL` doesn't match the site's URL exactly (including `https://`). Fix it and restart the backend |
+| `/api/health` returns 207 or `database: disconnected` | Wrong `DB_HOST` / password, Postgres pod not ready, or `DB_SSL` not set to `false`. Check the backend pod logs. Restart the backend after Postgres is ready |
+| Auth routes return 503 "Database is not available" | Same as above. The API starts without a database in limited mode |
+| Load balancer / ingress shows the backend unhealthy | The health check path is wrong. Use `/api/health` for the backend and `/` for the frontend |
+| Too many requests (429) | Rate limit hit (login: 15 per 15 min per IP). Wait or restart the pod |
+| Old UI after a deploy | Hard refresh. `index.html` is served with `no-store`, so new deploys appear right away |
+
+---
+
+## Known Limitations
+
+- **Offline fallback:** if the API is unreachable, the frontend falls back to browser `localStorage`. This is only meant as a fallback, so make sure the backend is healthy before the demo. Bills created in fallback mode are not saved in the database.
+- **Forgot password** is a UI placeholder only; no email is sent.
+- **Draft bills** cannot be edited after saving; they can only be finalized.
+- **In-cluster database:** a single Postgres pod is fine for a demo, but has no backups or replication. Use RDS (`rds-option/`) for real production use.
+- With `DB_SSL=true` (RDS), the connection uses SSL with `rejectUnauthorized: false`. For production, use the RDS CA bundle.

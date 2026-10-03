@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { getSecrets } from '../config/secrets';
+import { getSslConfig } from '../config/database';
 import { Pool } from 'pg';
 
 const SQL = `
@@ -77,7 +78,7 @@ async function initDb() {
     database: secrets.DB_NAME,
     user: secrets.DB_USER,
     password: secrets.DB_PASSWORD,
-    ssl: secrets.DB_HOST !== 'localhost' ? { rejectUnauthorized: false } : undefined,
+    ssl: getSslConfig(secrets.DB_HOST),
   });
 
   try {

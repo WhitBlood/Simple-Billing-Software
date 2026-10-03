@@ -1,6 +1,21 @@
-// In production (behind ALB), use relative path '/api'
-// In local dev, use full URL 'http://localhost:4000/api'
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+// Runtime config is injected by server.js via /config.js → window.__ENV__
+// This allows the backend URL to be set as an environment variable on the
+// EKS pod WITHOUT rebuilding the Docker image.
+//
+// Priority:
+//   1. window.__ENV__.BACKEND_URL  (runtime — set via K8s env var BACKEND_URL)
+//   2. import.meta.env.VITE_API_URL (build-time fallback for local `npm run dev`)
+//   3. '/api'                        (relative path — works behind an ingress/ALB proxy)
+declare global {
+  interface Window {
+    __ENV__?: { BACKEND_URL?: string };
+  }
+}
+
+export const API_BASE =
+  window.__ENV__?.BACKEND_URL ||
+  import.meta.env.VITE_API_URL ||
+  '/api';
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('billflow_token');

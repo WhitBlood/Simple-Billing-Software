@@ -7,7 +7,7 @@ RUN npm run build
 
 FROM node:18-alpine
 WORKDIR /app
-RUN npm init -y && npm install express
+RUN npm init -y && npm pkg set type=module && npm install express@4
 COPY --from=build /app/dist ./dist
 COPY server.js ./
 EXPOSE 3000

@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { User } from '../types';
 import { getItem, setItem, removeItem } from '../utils/storage';
 import { generateId } from '../utils/helpers';
-import { authApi } from '../services/api';
+import { authApi, API_BASE } from '../services/api';
 
 interface AuthContextType {
   user: User | null;
@@ -22,7 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:4000/api') + '/health');
+        const r = await fetch(`${API_BASE}/health`);
         if (r.ok) setIsOnline(true);
       } catch { setIsOnline(false); }
     })();

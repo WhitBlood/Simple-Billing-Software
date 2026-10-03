@@ -21,6 +21,7 @@ import billsRouter from './routes/bills';
 async function bootstrap() {
   const config = getAppConfig();
   const app = express();
+  app.set('trust proxy', 1);                  // Behind NGINX ingress — use real client IP
 
   // ─── SECURITY ───────────────────────────────────────────
   app.use(helmet());                          // Security headers
@@ -30,8 +31,15 @@ async function bootstrap() {
   app.disable('x-powered-by');                // Hide Express
 
   // ─── CORS ───────────────────────────────────────────────
+  // FRONTEND_URL may be a comma-separated list, e.g.
+  // "https://whiteblood.online,https://www.whiteblood.online"
+  const allowedOrigins = String(config.frontendUrl)
+    .split(',')
+    .map((o) => o.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+
   app.use(cors({
-    origin: config.frontendUrl,
+    origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
